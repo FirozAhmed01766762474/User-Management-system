@@ -4,6 +4,7 @@ import { AuthResponse } from "../Models/AuthResponse";
 import { BehaviorSubject, Subject, catchError, tap, throwError } from "rxjs";
 import { User } from "../Models/User";
 import { Router } from "@angular/router";
+import { LoggingInterceptorService } from "./logging-interceptor.service";
 @Injectable({
     providedIn: 'root'
 })
@@ -11,6 +12,7 @@ export class AuthService{
     http:HttpClient = inject(HttpClient);
     user = new BehaviorSubject<User>(null);
     router:Router = inject(Router);
+    private tokenExpiretimer: any;
 
     signUp(email,password)
     {
@@ -41,18 +43,72 @@ export class AuthService{
               this.handleCreateUser(res);
         }))
     }
+    // autoLogin()
+    // {
+    //     const user = JSON.parse(localStorage.getItem('user'));
+    //     console.log(user);
+    //     if(!user)
+    //         {
+    //             return;
+    //         }
+    //     const loggedUser = new User(user.email,user.id,user._token,user.expireIn);
+    //     if(loggedUser.token)
+    //         {
+    //             this.user.next(loggedUser);
+    //         }
+    // } 
+
+    autoLogin(){
+        const user = JSON.parse(localStorage.getItem('user'));
+
+        if(!user){
+            return;
+        }
+
+        const loggedUser = new User(user.email, user.id, user._token, user._expiresIn)
+
+        if(loggedUser.token){
+            this.user.next(loggedUser);
+            const timerValue = user._expiresIn.getTime() - new Date().getTime();
+            this.autoLogout(timerValue);
+        }
+    }
     logOut()
     {
         this.user.next(null);
         this.router.navigate(['/login'])
+        localStorage.removeItem('user');
+        if(this.tokenExpiretimer){
+            clearTimeout(this.tokenExpiretimer);
+        }
+        this.tokenExpiretimer = null;
     }
 
-    private handleCreateUser(res)
-    {
-        const expereinTs = new Date().getTime()+ +res.expiresIn*1000;
-        const expireIn = new Date(expereinTs);
-        const user = new User(res.email,res.localId,res.idToken, expireIn);
-        this.user.next(user); 
+    
+    autoLogout(expireTime: number){
+        this.tokenExpiretimer = setTimeout(() => {
+            this.logOut();
+        }, expireTime);
+    }
+
+    // private handleCreateUser(res)
+    // {
+    //     const expereinTs = new Date().getTime()+ +res.expiresIn * 1000;
+    //     const expireIn = new Date(expereinTs);
+    //     const user = new User(res.email,res.localId,res.idToken, expireIn);
+    //     this.user.next(user); 
+    //     localStorage.setItem('user', JSON.stringify(user));
+    //     this.autoLogout(res.expireIn*1000)
+       
+    // }
+    private handleCreateUser(res){
+        const expiresInTs = new Date().getTime() + +res.expiresIn * 1000;
+        const expiresIn = new Date(expiresInTs);
+        const user = new User(res.email, res.localId, res.idToken, expiresIn);
+        this.user.next(user);
+        this.autoLogout(res.expiresIn * 1000);
+
+        localStorage.setItem('user', JSON.stringify(user));
     }
 
     private handleError(err){
